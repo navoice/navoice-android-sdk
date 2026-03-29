@@ -1,5 +1,9 @@
 # Navoice Android SDK
 
+Version: 1.0.0  
+Platform: Android  
+Distribution: AAR
+
 Official SDK for integrating Navoice voice navigation into Android applications.
 Part of the **Navoice Voice Navigation Platform**.
 
@@ -16,6 +20,9 @@ The SDK interprets the request and returns a navigation result which your applic
 
 The SDK does not control your UI or navigation — your application remains fully in control.
 
+Navoice is UI-agnostic.  
+It works with Jetpack Compose, Android Views / XML, and hybrid applications.
+
 
 ## Key Capabilities
 
@@ -29,6 +36,8 @@ The SDK does not control your UI or navigation — your application remains full
 ---
 
 ## Requirements
+
+Navoice supports both Jetpack Compose and classic Android Views / XML applications.
 
 - Android minSdk 24
 - Kotlin 1.7+
@@ -169,7 +178,7 @@ Place your spec JSON in Android assets. Typical path: `app/src/main/assets/spec.
       "id": "events.open",
       "title": "Events",
       "screenId": "events",
-      "keywords": ["events", "events", "scheduled-events"],
+      "keywords": ["events", "scheduled-events"],
       "examples": ["show events", "open events"],
       "defaultParams": {},
       "action": { "type": "navigate" }
@@ -201,7 +210,130 @@ val navoice = Navoice(config).apply {
 
 ---
 
-## Handling Results
+## Android Views / XML Integration
+
+Navoice works with both Jetpack Compose and classic Android Views / XML applications.
+
+If your app is built using Activities, Fragments, Views, or XML layouts, you can initialize and use Navoice directly in your Activity or Fragment.
+
+### Initialize in Activity
+
+```kotlin
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var navoice: Navoice
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val config = NavoiceConfig.Builder(this)
+            .publishableKey("YOUR_PUBLISHABLE_KEY")
+            .identifier(packageName)
+            .build(applicationId = packageName)
+
+        navoice = Navoice(config).apply {
+            specProvider = {
+                NavoiceSpecLoader.loadFromAssets(this@MainActivity, "spec")
+            }
+            onResult = { result ->
+                when (result) {
+                    is NavoiceResult.Execute -> navigateTo(result.screenId, result.params)
+                    is NavoiceResult.Present -> showPresentation(result.presentationId, result.params)
+                    is NavoiceResult.ShowChoices -> showChoiceSheet(result.say, result.choices)
+                    is NavoiceResult.Unsupported -> showMessage(result.say)
+                }
+            }
+        }
+    }
+}
+```
+
+### Start Voice
+
+```kotlin
+navoice.startVoice()
+```
+
+### Example Navigation (Views / XML)
+
+```kotlin
+private fun navigateTo(screenId: String, params: Map<String, String>) {
+    when (screenId) {
+        "events" -> startActivity(Intent(this, EventsActivity::class.java))
+        "education" -> startActivity(Intent(this, EducationActivity::class.java))
+    }
+}
+```
+
+### Example Presentation
+
+```kotlin
+private fun showPresentation(presentationId: String, params: Map<String, String>) {
+    val sheet = PublishableKeyBottomSheet()
+    sheet.show(supportFragmentManager, "publishable-key")
+}
+```
+
+---
+
+## UI Framework Support
+
+Navoice is UI-agnostic and works with:
+
+- Jetpack Compose
+- Android Views / XML
+- Hybrid applications
+
+---
+
+## Threading
+
+All Navoice callbacks are safe to use for UI updates from the main application flow.
+
+If your app uses lifecycle-aware scopes or custom threading, keep your navigation and UI updates on the main thread.
+
+---
+
+## Minimal Example
+
+```kotlin
+navoice.onResult = { result ->
+    when (result) {
+        is NavoiceResult.Execute -> println("Navigate to: ${result.screenId}")
+        is NavoiceResult.Present -> println("Present: ${result.presentationId}")
+        is NavoiceResult.Unsupported -> println(result.say)
+        is NavoiceResult.ShowChoices -> println(result.say)
+    }
+}
+
+navoice.startVoice()
+```
+
+---
+
+## Handling Unsupported Commands
+
+```kotlin
+is NavoiceResult.Unsupported -> {
+    showMessage(result.say)
+}
+```
+
+---
+
+## App Lifecycle
+
+Stop voice when the app goes to background or when the current screen is no longer active:
+
+```kotlin
+navoice.stopVoice()
+```
+
+Restart when needed.
+
+---
+
+## Full Result Handling Example
 
 The SDK returns `NavoiceResult` via `onResult` or from `route(text)`.
 
