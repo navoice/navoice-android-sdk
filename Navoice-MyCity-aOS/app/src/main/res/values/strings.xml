@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MyCity</string>
+    <string name="tab_education">Education</string>
+    <string name="tab_events">Events</string>
+    <string name="tab_recycle">Recycle</string>
+    <string name="tab_taxes">Taxes</string>
+    <string name="mic_accessibility_speak">Tap to start listening</string>
+    <string name="mic_accessibility_listening">Tap to stop and process</string>
+    <string name="mic_accessibility_thinking">Processing</string>
+    <string name="text_input_accessibility">Text input mode</string>
+    <string name="result_unsupported">Sorry, I couldn\'t understand that.</string>
+    <string name="choices_title">What did you mean?</string>
+    <string name="education_title">Education</string>
+    <string name="education_search_hint">Search courses, topics, or tutors</string>
+    <string name="featured_courses">Featured Courses</string>
+    <string name="see_all">See All</string>
+    <string name="recommended_lessons">Recommended Lessons</string>
+    <string name="events_title">Upcoming Events</string>
+    <string name="filter_today">Today</string>
+    <string name="filter_this_week">This Week</string>
+    <string name="filter_monthly">Monthly</string>
+    <string name="filter_online">Online</string>
+    <string name="register">Register</string>
+    <string name="recycle_title">Recycle</string>
+    <string name="recycle_search_hint">Search Recycling Guide (e.g. Battery)</string>
+    <string name="your_impact">Your Impact</string>
+    <string name="nearby_centers">Nearby Centers</string>
+    <string name="map_view">Map View</string>
+    <string name="taxes_title">Taxes</string>
+    <string name="tax_season">Tax Season 2024</string>
+    <string name="dashboard_summary">Dashboard Summary</string>
+    <string name="in_progress">In Progress</string>
+    <string name="action_items">Action Items</string>
+    <string name="did_you_know">Did you know?</string>
+</resources>

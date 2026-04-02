@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/educationFragment">
+
+    <fragment
+        android:id="@+id/educationFragment"
+        android:name="com.navoice.mycity.ui.tabs.EducationFragment"
+        android:label="@string/tab_education" />
+    <fragment
+        android:id="@+id/eventsFragment"
+        android:name="com.navoice.mycity.ui.tabs.EventsFragment"
+        android:label="@string/tab_events" />
+    <fragment
+        android:id="@+id/recycleFragment"
+        android:name="com.navoice.mycity.ui.tabs.RecycleFragment"
+        android:label="@string/tab_recycle" />
+    <fragment
+        android:id="@+id/taxesFragment"
+        android:name="com.navoice.mycity.ui.tabs.TaxesFragment"
+        android:label="@string/tab_taxes" />
+</navigation>

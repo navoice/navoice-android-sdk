@@ -1,6 +1,6 @@
 # Navoice Android SDK
 
-Version: 1.0.0  
+Current Version: 1.0.0  
 Platform: Android  
 Distribution: AAR
 
@@ -23,6 +23,74 @@ The SDK does not control your UI or navigation — your application remains full
 Navoice is UI-agnostic.  
 It works with Jetpack Compose, Android Views / XML, and hybrid applications.
 
+## What’s in this repository
+
+This repository includes:
+
+- `navoice-sdk-release.aar` — the Navoice Android SDK
+- `Navoice-MyCity` — demo Android application shipped alongside the SDK, demonstrating a complete integration pattern
+
+The demo application is provided as a reference implementation and is disabled until project credentials are configured.
+
+---
+
+## Demo Application: Navoice-MyCity
+
+Navoice-MyCity is a reference Android application shipped alongside the SDK.  
+It demonstrates a full end-to-end integration including:
+
+- SDK initialization
+- Voice lifecycle
+- Result handling
+- Navigation mapping
+- Presentation handling
+
+The demo application is disabled until you configure your own project credentials.
+
+The demo application is provided for reference only and is not intended for production use.
+
+If the publishable key is missing:
+
+- SDK initialization is disabled
+- A warning appears on app launch
+- Microphone button shows a warning
+- Text input button shows a warning
+
+The application UI continues to run normally.
+
+## Configuring the Demo App
+
+To enable the demo app:
+
+1. Go to Navoice Portal
+2. Create a project
+3. Copy the publishable key
+4. Add the key to `gradle.properties`:
+
+```properties
+NAVOICE_PUBLISHABLE_KEY=pk_your_key
+NAVOICE_BACKEND_BASE_URL=https://api.navoice.io
+```
+
+License validation requires:
+
+- A publishable key
+- A package name registered in Navoice Portal
+
+## License Validation
+
+Navoice validates the application using:
+
+- Publishable key
+- Android package name (applicationId)
+
+If validation fails:
+
+- Voice features are disabled
+- Text routing is disabled
+- UI remains functional
+
+Ensure your package name is registered in the Navoice Portal under Allowed Identifiers.
 
 ## Key Capabilities
 

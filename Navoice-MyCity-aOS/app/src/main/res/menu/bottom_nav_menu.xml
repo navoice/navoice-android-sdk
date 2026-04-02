@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/educationFragment"
+        android:icon="@android:drawable/ic_menu_edit"
+        android:title="@string/tab_education" />
+    <item
+        android:id="@+id/eventsFragment"
+        android:icon="@android:drawable/ic_menu_my_calendar"
+        android:title="@string/tab_events" />
+    <item
+        android:id="@+id/recycleFragment"
+        android:icon="@android:drawable/ic_menu_rotate"
+        android:title="@string/tab_recycle" />
+    <item
+        android:id="@+id/taxesFragment"
+        android:icon="@android:drawable/ic_menu_agenda"
+        android:title="@string/tab_taxes" />
+</menu>
