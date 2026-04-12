@@ -1,40 +1,459 @@
 # Navoice Android SDK
 
-Current Version: 1.0.0  
-Platform: Android  
-Distribution: AAR
+**Version:** 1.0.0  
+**Distribution:** `navoice-sdk-release.aar`
 
-Official SDK for integrating Navoice voice navigation into Android applications.
-Part of the **Navoice Voice Navigation Platform**.
+Voice navigation SDK for Android. Users speak (or you send text); the SDK returns structured results so your app performs navigation and UI updates.
 
-## Overview
-Navoice Android SDK enables voice-driven navigation inside Android applications.
-
-Users can speak commands such as:
-
-- "Open events"
-- "Show taxes"
-- "What is my subscriber number"
-
-The SDK interprets the request and returns a navigation result which your application uses to update UI or navigation state.
-
-The SDK does not control your UI or navigation — your application remains fully in control.
-
-Navoice is UI-agnostic.  
-It works with Jetpack Compose, Android Views / XML, and hybrid applications.
-
-## What’s in this repository
-
-This repository includes:
-
-- `navoice-sdk-release.aar` — the Navoice Android SDK
-- `Navoice-MyCity` — demo Android application shipped alongside the SDK, demonstrating a complete integration pattern
-
-The demo application is provided as a reference implementation and is disabled until project credentials are configured.
+This package includes the SDK AAR and the **Navoice-MyCity** demo app (reference only; disabled until you add credentials).
 
 ---
 
-## Demo Application: Navoice-MyCity
+## 1. Overview
+
+- **Execute** — navigate to a screen with optional parameters.
+- **Present** / **ShowChoices** — returned when your spec defines those flows; handle them in `onResult` if you use them.
+- **Unsupported** — no match, license issue, missing spec, or error message for the user.
+
+The SDK does not draw your UI or run your router. You supply a navigation spec, wire a microphone (or text), and implement `onResult`.
+
+---
+
+## 2. Requirements
+
+| Requirement | Notes |
+|-------------|--------|
+| **Android minSdk** | 24+ |
+| **compileSdk** | 36 |
+| **Kotlin** | 1.7+ |
+| **Java** | 17 |
+| **Android Gradle Plugin** | 8.9+ |
+
+Jetpack Compose, Android Views/XML, and hybrid apps are supported.
+
+---
+
+## 3. Installation (step-by-step)
+
+### 3.1 Add SDK binary
+
+1. Copy **`navoice-sdk-release.aar`** into **`app/libs/`**.
+2. If `libs` does not exist: in Android Studio, right-click **`app`** → **New** → **Directory** → name it **`libs`**.
+
+### 3.2 Add dependency
+
+Open **`app/build.gradle.kts`** and add:
+
+```kotlin
+dependencies {
+    implementation(files("libs/navoice-sdk-release.aar"))
+}
+```
+
+Click **Sync Now**.
+
+### 3.3 Required runtime dependencies
+
+The AAR does not bundle these; add them to **`app/build.gradle.kts`**. The version numbers below are **examples only** — align them with your project’s Kotlin, AGP, and other AndroidX libraries.
+
+```kotlin
+implementation("androidx.core:core-ktx:1.12.0")
+implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+implementation("com.squareup.okhttp3:okhttp:4.12.0")
+implementation("com.squareup.moshi:moshi:1.15.0")
+implementation("com.squareup.moshi:moshi-kotlin:1.15.0")
+implementation("com.squareup.moshi:moshi-adapters:1.15.0")
+```
+
+### 3.4 Manifest permissions
+
+In **`app/src/main/AndroidManifest.xml`** (inside `<manifest>`):
+
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+```
+
+---
+
+## 4. Quick start (working example)
+
+Minimal flow: AAR + dependencies → config object → `Navoice` → `specProvider` → `onResult` → `startVoice()` after permission.
+
+See sections 5–10 for focused snippets, and **Full MainActivity Example** for a single end-to-end Compose `MainActivity.kt`.
+
+---
+
+## 5. Initialize SDK
+
+### 5.1 App keys — `AppNavoiceConfig.kt`
+
+Create:
+
+**`app/src/main/java/your/package/name/AppNavoiceConfig.kt`**
+
+Do **not** name this file `NavoiceConfig.kt` (that name is reserved for SDK types).
+
+```kotlin
+package your.package.name
+
+object AppNavoiceConfig {
+    const val PUBLISHABLE_KEY = "your_publishable_key"
+    const val BACKEND_BASE_URL = "https://api.navoice.io"
+}
+```
+
+Use `BACKEND_BASE_URL` only if you need a non-default backend; the SDK default is `https://api.navoice.io` (see `NavoiceConfig.DEFAULT_BACKEND_URL`).
+
+### 5.2 Create `Navoice` in `onCreate`
+
+```kotlin
+import io.navoice.sdk.Navoice
+import io.navoice.sdk.NavoiceConfig
+import io.navoice.sdk.NavoiceSTTConfig
+
+private lateinit var navoice: Navoice
+
+override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+
+    val config = NavoiceConfig.Builder(this)
+        .publishableKey(AppNavoiceConfig.PUBLISHABLE_KEY)
+        .identifier(packageName)
+        .locale("en-US")
+        .sttConfig(NavoiceSTTConfig.hybrid())
+        .build(applicationId = packageName)
+
+    navoice = Navoice(config)
+}
+```
+
+Optional: custom backend and debug logging.
+
+```kotlin
+val config = NavoiceConfig.Builder(this)
+    .baseUrl(AppNavoiceConfig.BACKEND_BASE_URL)
+    .publishableKey(AppNavoiceConfig.PUBLISHABLE_KEY)
+    .identifier(packageName)
+    .locale("en-US")
+    .sttConfig(NavoiceSTTConfig.hybrid())
+    .debug(BuildConfig.DEBUG)
+    .build(applicationId = packageName)
+```
+
+`NavoiceConfig.Builder(this)` passes `Context` so the SDK can run on-device speech recognition.
+
+---
+
+## 6. Load spec (assets)
+
+### 6.1 Add the JSON file
+
+Place your spec (exported from the Navoice portal) in assets using the standard filename:
+
+**`app/src/main/assets/spec.json`**
+
+### 6.2 Set `specProvider`
+
+After `navoice = Navoice(config)`:
+
+```kotlin
+import org.json.JSONObject
+
+navoice.specProvider = suspend {
+    val json = assets.open("spec.json")
+        .bufferedReader()
+        .use { it.readText() }
+
+    JSONObject(json).toMap()
+}
+```
+
+`specProvider` must return a **non-empty** `Map<String, Any?>`. An empty map produces `NavoiceResult.Unsupported` with a “missing spec” style message.
+
+### 6.3 JSON helper (`JSONObject` → `Map`)
+
+`JSONObject` has no built-in `toMap()`. Import **`org.json.JSONArray`** and **`org.json.JSONObject`**, then add **`private fun JSONObject.toMap()`** and **`private fun JSONArray.toList()`** (same implementation as in **Full MainActivity Example**): place them **below the `MainActivity` class** in the same file, or move them to a small **`JsonSpec.kt`** as **`internal`** functions if you prefer a slimmer activity file.
+
+---
+
+## 7. Voice lifecycle
+
+Use an **`Activity`** (`ComponentActivity` or `AppCompatActivity`). Typical pattern:
+
+1. Call **`navoice.requestVoicePermission(activity) { granted -> … }`** before **`startVoice()`** when the user turns the mic on.
+2. Override **`onRequestPermissionsResult`**: when **`requestCode == LocalSpeechRecognizer.REQUEST_RECORD_AUDIO`**, call **`navoice.onRequestPermissionsResult(requestCode, grantResults)`**.
+3. Call **`navoice.stopVoice()`** in **`onPause()`** (or when leaving the screen) so listening does not continue in the background.
+
+A working implementation of all three appears in **Full MainActivity Example**.
+
+---
+
+## 8. Add microphone UI (Jetpack Compose)
+
+### 8.1 Enable Compose in the app module
+
+In **`app/build.gradle.kts`**:
+
+```kotlin
+android {
+    buildFeatures {
+        compose = true
+    }
+}
+
+dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2024.02.00") // example BOM; pick a current BOM for your stack
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.activity:activity-compose:1.8.2") // example; use a version compatible with your Activity KTX
+}
+```
+
+Wire the Compose compiler to your Kotlin version using the [Compose Compiler Gradle plugin](https://developer.android.com/develop/ui/compose/compiler) (recommended for Kotlin 2.0+) or your project’s existing Compose/Kotlin compatibility setup — see the official [Compose–Kotlin compatibility map](https://developer.android.com/jetpack/androidx/releases/compose-kotlin).
+
+### 8.2 Imports (reference)
+
+Use the imports in **Full MainActivity Example** (next section) as the authoritative list for a Compose host screen.
+
+### 8.3 Compose layout pattern
+
+Use a **`Scaffold`** with **`bottomBar`** for tabs and place the **microphone toggle** in the main content. A complete, copy-paste **`MainActivity.kt`** (PlayIt-style tabs: Guitar / Drums / Recorder / Violin, `selectedTab`, `isListening`, permissions, `spec.json`, and JSON helpers) is in **Full MainActivity Example** below.
+
+---
+
+## Full MainActivity Example
+
+Place this file at **`app/src/main/java/your/package/name/MainActivity.kt`** and set your application’s **`package`** and **`AppNavoiceConfig`** to match.
+
+This example uses **`spec.json`** in assets, **`NavoiceSTTConfig.hybrid()`**, bottom navigation for four instruments, and maps **`screenId`** → tab: **`guitar`** → 0, **`drums`** → 1, **`recorder`** → 2, **`violin`** → 3. **`Present`** / **`ShowChoices`** are not implemented here; add UI when your spec uses those result types.
+
+```kotlin
+package your.package.name
+
+import android.os.Bundle
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import io.navoice.sdk.Navoice
+import io.navoice.sdk.NavoiceConfig
+import io.navoice.sdk.NavoiceSTTConfig
+import io.navoice.sdk.model.NavoiceResult
+import io.navoice.sdk.stt.LocalSpeechRecognizer
+import org.json.JSONArray
+import org.json.JSONObject
+
+class MainActivity : ComponentActivity() {
+
+    private lateinit var navoice: Navoice
+
+    private val selectedTab = mutableIntStateOf(0)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val config = NavoiceConfig.Builder(this)
+            .publishableKey(AppNavoiceConfig.PUBLISHABLE_KEY)
+            .identifier(packageName)
+            .locale("en-US")
+            .sttConfig(NavoiceSTTConfig.hybrid())
+            .build(applicationId = packageName)
+
+        navoice = Navoice(config)
+
+        navoice.specProvider = suspend {
+            val json = assets.open("spec.json").bufferedReader().use { it.readText() }
+            JSONObject(json).toMap()
+        }
+
+        navoice.onResult = { result ->
+            when (result) {
+                is NavoiceResult.Execute -> navigateTo(result.screenId, result.params)
+                is NavoiceResult.Unsupported -> Log.d("NAVOICE", "Unsupported: ${result.say}")
+                is NavoiceResult.Present ->
+                    Log.d("NAVOICE", "Present presentationId=${result.presentationId} (add UI if your spec uses present)")
+                is NavoiceResult.ShowChoices ->
+                    Log.d("NAVOICE", "ShowChoices say=${result.say} count=${result.choices.size} (add UI if your spec uses choices)")
+            }
+        }
+
+        val activity = this
+        setContent {
+            var isListening by remember { mutableStateOf(false) }
+            val tabIndex = selectedTab.intValue
+            val tabs = listOf("Guitar", "Drums", "Recorder", "Violin")
+
+            Scaffold(
+                bottomBar = {
+                    NavigationBar {
+                        tabs.forEachIndexed { index, label ->
+                            NavigationBarItem(
+                                selected = tabIndex == index,
+                                onClick = { selectedTab.intValue = index },
+                                icon = { Text(label.take(1)) },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+                }
+            ) { innerPadding ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(16.dp)
+                ) {
+                    Text(text = tabs[tabIndex])
+                    Button(
+                        onClick = {
+                            if (isListening) {
+                                navoice.stopVoice()
+                                isListening = false
+                                Log.d("NAVOICE", "Stopped listening")
+                            } else {
+                                navoice.requestVoicePermission(activity) { granted ->
+                                    if (granted) {
+                                        navoice.startVoice()
+                                        isListening = true
+                                        Log.d("NAVOICE", "Started listening")
+                                    } else {
+                                        Log.d("NAVOICE", "RECORD_AUDIO denied")
+                                    }
+                                }
+                            }
+                        }
+                    ) {
+                        Text(if (isListening) "Stop mic" else "Voice")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun navigateTo(screenId: String, params: Map<String, String>) {
+        selectedTab.intValue = when (screenId) {
+            "guitar" -> 0
+            "drums" -> 1
+            "recorder" -> 2
+            "violin" -> 3
+            else -> selectedTab.intValue
+        }
+        Log.d("NAVOICE", "navigateTo screenId=$screenId params=$params selectedTab=${selectedTab.intValue}")
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LocalSpeechRecognizer.REQUEST_RECORD_AUDIO) {
+            navoice.onRequestPermissionsResult(requestCode, grantResults)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        navoice.stopVoice()
+    }
+}
+
+private fun JSONObject.toMap(): Map<String, Any?> {
+    val map = mutableMapOf<String, Any?>()
+    keys().forEach { key ->
+        map[key] = when (val v = get(key)) {
+            is JSONObject -> v.toMap()
+            is JSONArray -> v.toList()
+            else -> if (v === JSONObject.NULL) null else v
+        }
+    }
+    return map
+}
+
+private fun JSONArray.toList(): List<Any?> {
+    return (0 until length()).map { i ->
+        when (val v = get(i)) {
+            is JSONObject -> v.toMap()
+            is JSONArray -> v.toList()
+            else -> if (v === JSONObject.NULL) null else v
+        }
+    }
+}
+```
+
+---
+
+## 9. Handle results
+
+Assign **`navoice.onResult`** and branch on **`NavoiceResult`** (see **Full MainActivity Example** for **`Execute`**, **`Unsupported`**, and **`Log.d`** stubs for **`Present`** / **`ShowChoices`**).
+
+**Text routing (optional):** from a coroutine scope (e.g. `lifecycleScope`):
+
+```kotlin
+lifecycleScope.launch {
+    val result = navoice.route("show my subscriber number")
+    // same when (result) { … } as above
+}
+```
+
+Or use `navoice.routeAndCallback("…")` to deliver the same `NavoiceResult` through `onResult`.
+
+---
+
+## 10. Navigation example
+
+Map each **`screenId`** from your Navoice spec to your app: **`NavController`**, **`Intent`**, **`FragmentManager`**, or a tab index. The **Full MainActivity Example** maps **`guitar` / `drums` / `recorder` / `violin`** to **`selectedTab`** (0–3). The **Android Views / XML integration** snippet uses the same IDs with **`Log.d`** placeholders you can replace with real navigation calls.
+
+Register your app’s package name as an allowed identifier in the Navoice portal; otherwise license validation fails and voice/text routing are disabled.
+
+---
+
+## 11. Debugging
+
+```kotlin
+Log.d("NAVOICE", "your message")
+```
+
+In Android Studio **Logcat**, filter by tag: **`NAVOICE`**.
+
+Enable SDK verbose logging with `.debug(true)` on `NavoiceConfig.Builder` (see section 5).
+
+---
+
+## 12. Integration checklist
+
+- [ ] Copy **`navoice-sdk-release.aar`** to **`app/libs/`**
+- [ ] Add **`implementation(files("libs/navoice-sdk-release.aar"))`** and required Maven dependencies
+- [ ] Add **`INTERNET`** and **`RECORD_AUDIO`** to the manifest
+- [ ] Create **`AppNavoiceConfig.kt`** (not `NavoiceConfig.kt`)
+- [ ] Initialize **`Navoice`** with **`NavoiceConfig.Builder(this)`** and your publishable key
+- [ ] Add **`app/src/main/assets/spec.json`**
+- [ ] Set **`navoice.specProvider`** (assets → `JSONObject` → `Map`)
+- [ ] Add JSON **`toMap` / `toList`** helpers
+- [ ] Add microphone (or other) UI; call **`requestVoicePermission`**, **`startVoice`**, **`stopVoice`**
+- [ ] Forward **`onRequestPermissionsResult`** for **`LocalSpeechRecognizer.REQUEST_RECORD_AUDIO`**
+- [ ] Set **`navoice.onResult`** and implement **`navigateTo`** (and Present/ShowChoices if needed)
+
+---
+
+## Demo application: Navoice-MyCity
 
 Navoice-MyCity is a reference Android application shipped alongside the SDK.  
 It demonstrates a full end-to-end integration including:
@@ -58,7 +477,7 @@ If the publishable key is missing:
 
 The application UI continues to run normally.
 
-## Configuring the Demo App
+### Configuring the demo app
 
 To enable the demo app:
 
@@ -77,7 +496,7 @@ License validation requires:
 - A publishable key
 - A package name registered in Navoice Portal
 
-## License Validation
+### License validation
 
 Navoice validates the application using:
 
@@ -92,536 +511,119 @@ If validation fails:
 
 Ensure your package name is registered in the Navoice Portal under Allowed Identifiers.
 
-## Key Capabilities
-
-- Voice-driven navigation
-- Text routing (cloud interpret pipeline)
-- Local + cloud Speech-to-Text (STT)
-- Secure license validation
-- Spec-based navigation architecture
-- Execute, Present, and ShowChoices result types
-
 ---
 
-## Requirements
+## Android Views / XML integration
 
-Navoice supports both Jetpack Compose and classic Android Views / XML applications.
+Navoice works with Activities, Fragments, and XML layouts. Initialize in **`onCreate`**, reuse the same **`AppNavoiceConfig`**, **`specProvider`**, and **`onResult`** pattern as above.
 
-- Android minSdk 24
-- Kotlin 1.7+
-- Java 17
-
-
-## Installation
-
-1. Copy `navoice-sdk-release.aar` into `app/libs/`.
-2. Add the SDK binary to `app/build.gradle.kts`:
+### Initialize in `Activity`
 
 ```kotlin
-implementation(files("libs/navoice-sdk-release.aar"))
-```
+import android.util.Log
+import io.navoice.sdk.Navoice
+import io.navoice.sdk.NavoiceConfig
+import io.navoice.sdk.NavoiceSTTConfig
+import io.navoice.sdk.model.NavoiceResult
+import org.json.JSONObject
+import io.navoice.sdk.stt.LocalSpeechRecognizer
 
-### Required Dependencies
-
-The AAR does not bundle external runtime dependencies. Add the following to your app module’s `dependencies` in `app/build.gradle.kts`:
-
-```kotlin
-implementation("androidx.core:core-ktx:1.12.0")
-implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-implementation("com.squareup.okhttp3:okhttp:4.12.0")
-implementation("com.squareup.moshi:moshi:1.15.0")
-implementation("com.squareup.moshi:moshi-kotlin:1.15.0")
-implementation("com.squareup.moshi:moshi-adapters:1.15.0")
-```
-
----
-
-## 30-Second Integration
-
-1. Copy the AAR to `app/libs` and add the AAR dependency in `app/build.gradle.kts`.
-2. Configure `NavoiceConfig` with your publishable key.
-3. Load the spec from assets (for example: app/src/main/assets/spec.json).
-4. Set `onResult` to handle navigation.
-5. Call `startVoice()` / `stopVoice()` for voice, or `route(text)` for text.
-
-```kotlin
-val config = NavoiceConfig.Builder(context)
-    .publishableKey("YOUR_PUBLISHABLE_KEY")
-    .identifier(context.packageName)
-    .build(applicationId = context.packageName)
-
-val navoice = Navoice(config)
-
-navoice.onResult = { result ->
-    when (result) {
-        is NavoiceResult.Execute -> navigateTo(result.screenId, result.params)
-        is NavoiceResult.Present -> showPresentation(result.presentationId, result.params)
-        is NavoiceResult.ShowChoices -> showChoiceSheet(result.say, result.choices)
-        is NavoiceResult.Unsupported -> showMessage(result.say)
-    }
-}
-```
-
----
-
-## Basic Setup
-
-```kotlin
-val config = NavoiceConfig.Builder(context)
-    .baseUrl("https://api.navoice.io")  // optional; defaults to this URL if omitted
-    .publishableKey("YOUR_PUBLISHABLE_KEY")
-    .identifier(context.packageName)
-    .locale("en-US")
-    .build(applicationId = context.packageName)
-
-val navoice = Navoice(config).apply {
-    specProvider = {
-        NavoiceSpecLoader.loadFromAssets(context, "spec")  // loads spec.json from assets
-    }
-    onResult = { result ->
-        when (result) {
-            is NavoiceResult.Execute -> navigateTo(result.screenId, result.params)
-            is NavoiceResult.Present -> showPresentation(result.presentationId, result.params)
-            is NavoiceResult.ShowChoices -> showChoiceSheet(result.say, result.choices)
-            is NavoiceResult.Unsupported -> showMessage(result.say)
-        }
-    }
-}
-```
-
----
-
-## App Configuration
-
-### Required
-
-- **publishableKey** – Your Navoice publishable key (from Navoice Portal).
-- **identifier** – App identifier (e.g. `context.packageName`). Can be omitted if `build(applicationId)` is used; it will default to `context.packageName`.
-- **specProvider** – Suspend function that returns the spec JSON. Must not return an empty map.
-
-### Optional
-
-- **baseUrl** – Backend URL. If not provided, SDK uses internal default: `https://api.navoice.io`.
-- **locale** – Default `"en-US"`.
-- **sttConfig** – STT mode: `localOnly`, `hybrid`, `cloudOnly`, or `disabled`. Default: `localOnly()`.
-- **context** – Android `Context` for STT and asset loading.
-- **debug** – Enable debug logging.
-
----
-
-## Navigation Spec
-
-The app must provide a navigation spec via `specProvider`.
-
-The spec defines:
-
-- screens
-- keywords
-- examples
-- routing logic
-- task actions
-
-The spec can be generated using the **Navoice Spec Builder** in the Navoice Portal.
-
----
-
-## Minimal Spec Example
-
-Place your spec JSON in Android assets. Typical path: `app/src/main/assets/spec.json`.
-
-```json
-{
-  "app": { "id": "my-app" },
-  "routing": {
-    "thresholds": {
-      "execute_min_score": 6.0,
-      "execute_min_conf": 0.75,
-      "choices_min_score": 3.0,
-      "choices_min_conf": 0.45
-    }
-  },
-  "tasks": [
-    {
-      "id": "events.open",
-      "title": "Events",
-      "screenId": "events",
-      "keywords": ["events", "scheduled-events"],
-      "examples": ["show events", "open events"],
-      "defaultParams": {},
-      "action": { "type": "navigate" }
-    }
-  ]
-}
-```
-
----
-
-## Initialize SDK
-
-```kotlin
-val config = NavoiceConfig.Builder(context)
-    .baseUrl("https://api.navoice.io")  // optional
-    .publishableKey("pk_xxxxxxxxxxxxxxxxx")
-    .identifier(context.packageName)
-    .locale("en-US")
-    .sttConfig(NavoiceSTTConfig.localOnly())
-    .build(applicationId = context.packageName)
-
-val navoice = Navoice(config).apply {
-    specProvider = {
-        NavoiceSpecLoader.loadFromAssets(context, "spec")
-    }
-    onResult = { /* handle result */ }
-}
-```
-
----
-
-## Android Views / XML Integration
-
-Navoice works with both Jetpack Compose and classic Android Views / XML applications.
-
-If your app is built using Activities, Fragments, Views, or XML layouts, you can initialize and use Navoice directly in your Activity or Fragment.
-
-### Initialize in Activity
-
-```kotlin
 class MainActivity : AppCompatActivity() {
 
     private lateinit var navoice: Navoice
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
 
         val config = NavoiceConfig.Builder(this)
-            .publishableKey("YOUR_PUBLISHABLE_KEY")
+            .publishableKey(AppNavoiceConfig.PUBLISHABLE_KEY)
             .identifier(packageName)
+            .locale("en-US")
+            .sttConfig(NavoiceSTTConfig.hybrid())
             .build(applicationId = packageName)
 
-        navoice = Navoice(config).apply {
-            specProvider = {
-                NavoiceSpecLoader.loadFromAssets(this@MainActivity, "spec")
-            }
-            onResult = { result ->
-                when (result) {
-                    is NavoiceResult.Execute -> navigateTo(result.screenId, result.params)
-                    is NavoiceResult.Present -> showPresentation(result.presentationId, result.params)
-                    is NavoiceResult.ShowChoices -> showChoiceSheet(result.say, result.choices)
-                    is NavoiceResult.Unsupported -> showMessage(result.say)
-                }
+        navoice = Navoice(config)
+
+        navoice.specProvider = suspend {
+            val json = assets.open("spec.json").bufferedReader().use { it.readText() }
+            JSONObject(json).toMap()
+        }
+
+        navoice.onResult = { result ->
+            when (result) {
+                is NavoiceResult.Execute -> navigateTo(result.screenId, result.params)
+                is NavoiceResult.Unsupported -> Log.d("NAVOICE", result.say)
+                is NavoiceResult.Present ->
+                    Log.d("NAVOICE", "Present presentationId=${result.presentationId} (add UI if your spec uses present)")
+                is NavoiceResult.ShowChoices ->
+                    Log.d("NAVOICE", "ShowChoices say=${result.say} count=${result.choices.size} (add UI if your spec uses choices)")
             }
         }
     }
-}
-```
 
-### Start Voice
+      override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LocalSpeechRecognizer.REQUEST_RECORD_AUDIO) {
+            navoice.onRequestPermissionsResult(requestCode, grantResults)
+        }
+    }
 
-```kotlin
-navoice.startVoice()
-```
-
-### Example Navigation (Views / XML)
-
-```kotlin
-private fun navigateTo(screenId: String, params: Map<String, String>) {
-    when (screenId) {
-        "events" -> startActivity(Intent(this, EventsActivity::class.java))
-        "education" -> startActivity(Intent(this, EducationActivity::class.java))
+    private fun navigateTo(screenId: String, params: Map<String, String>) {
+        when (screenId) {
+            "guitar" -> Log.d("NAVOICE", "guitar params=$params")
+            "drums" -> Log.d("NAVOICE", "drums params=$params")
+            "recorder" -> Log.d("NAVOICE", "recorder params=$params")
+            "violin" -> Log.d("NAVOICE", "violin params=$params")
+            else -> Log.d("NAVOICE", "Unhandled screenId=$screenId params=$params")
+        }
+        // Replace Log.d branches with startActivity(...), Fragment transactions, or NavController.navigate(...)
     }
 }
 ```
 
-### Example Presentation
+Add the same **`JSONObject.toMap()` / `JSONArray.toList()`** private helpers used in **Full MainActivity Example** (bottom of the file or shared **`JsonSpec.kt`**).
+
+### Start / stop voice (Views)
 
 ```kotlin
-private fun showPresentation(presentationId: String, params: Map<String, String>) {
-    val sheet = PublishableKeyBottomSheet()
-    sheet.show(supportFragmentManager, "publishable-key")
+navoice.requestVoicePermission(this) { granted ->
+    if (granted) navoice.startVoice()
 }
-```
-
----
-
-## UI Framework Support
-
-Navoice is UI-agnostic and works with:
-
-- Jetpack Compose
-- Android Views / XML
-- Hybrid applications
-
----
-
-## Threading
-
-All Navoice callbacks are safe to use for UI updates from the main application flow.
-
-If your app uses lifecycle-aware scopes or custom threading, keep your navigation and UI updates on the main thread.
-
----
-
-## Minimal Example
-
-```kotlin
-navoice.onResult = { result ->
-    when (result) {
-        is NavoiceResult.Execute -> println("Navigate to: ${result.screenId}")
-        is NavoiceResult.Present -> println("Present: ${result.presentationId}")
-        is NavoiceResult.Unsupported -> println(result.say)
-        is NavoiceResult.ShowChoices -> println(result.say)
-    }
-}
-
-navoice.startVoice()
-```
-
----
-
-## Handling Unsupported Commands
-
-```kotlin
-is NavoiceResult.Unsupported -> {
-    showMessage(result.say)
-}
-```
-
----
-
-## App Lifecycle
-
-Stop voice when the app goes to background or when the current screen is no longer active:
-
-```kotlin
+// …
 navoice.stopVoice()
 ```
 
-Restart when needed.
+Call **`navoice.stopVoice()`** from **`onPause()`** as in **Full MainActivity Example** when the user leaves the screen.
+
+`Present` / `ShowChoices` are logged in the **`onResult`** block above; add real UI when your spec returns those types.
 
 ---
 
-## Full Result Handling Example
+## Errors (quick reference)
 
-The SDK returns `NavoiceResult` via `onResult` or from `route(text)`.
-
-```kotlin
-when (result) {
-    is NavoiceResult.Execute -> {
-        // Navigate to screen
-        navigateTo(result.screenId, result.params)
-    }
-    is NavoiceResult.Present -> {
-        // Show presentation (modal, bottom sheet)
-        showPresentation(result.presentationId, result.params)
-    }
-    is NavoiceResult.ShowChoices -> {
-        // Show choice sheet
-        showChoiceSheet(result.say, result.choices)
-    }
-    is NavoiceResult.Unsupported -> {
-        // No match or fallback
-        showMessage(result.say)
-    }
-}
-```
+| Situation | Typical outcome |
+|-----------|-------------------|
+| Empty / missing spec | `Unsupported` mentioning spec / `specProvider` |
+| License not valid | `Unsupported` about license / subscription |
+| Empty text in `route` | `Unsupported`: “Please type or say something” |
+| Network / parse errors | `Unsupported` with error text; `routeAndCallback` forwards via `onResult` |
 
 ---
 
-## Result Types
+## Binary distribution
 
-### Execute
-
-Navigate to a screen.
-
-| Field       | Type                 | Description        |
-|------------|----------------------|--------------------|
-| screenId   | String               | Target screen ID   |
-| params     | Map<String, String>   | Route parameters   |
-| say        | String               | User-facing message|
-| confidence | Double?               | Match confidence   |
-
-### Present
-
-Show a presentation (modal, bottom sheet). Use when a task defines `action.type == "present"`.
-
-| Field           | Type                 | Description        |
-|-----------------|----------------------|--------------------|
-| presentationId  | String               | Presentation ID    |
-| params          | Map<String, String>  | Route parameters   |
-| say             | String               | User-facing message|
-
-### ShowChoices
-
-Display multiple choices for the user to select. Mainly when cloud returns choices.
-
-| Field   | Type                     | Description        |
-|---------|---------------------------|--------------------|
-| say     | String                     | User-facing message|
-| choices | List&lt;NavoiceChoice&gt; | Selectable options |
-
-**NavoiceChoice:**
-
-| Field       | Type                 |
-|------------|----------------------|
-| taskId     | String               |
-| title      | String               |
-| confidence | Double               |
-| screenId   | String?              |
-| params     | Map&lt;String, String&gt;? |
-
-### Unsupported
-
-No match or fallback.
-
-| Field | Type   | Description        |
-|-------|--------|--------------------|
-| say   | String | User-facing message|
-
----
-
-## Voice Lifecycle
-
-1. **Request permission** – Call `requestVoicePermission(activity, callback)` from an Activity.
-2. **Forward permission result** – Call `onRequestPermissionsResult(requestCode, grantResults)` when `requestCode == LocalSpeechRecognizer.REQUEST_RECORD_AUDIO`.
-3. **Start listening** – `navoice.startVoice()`.
-4. **Stop listening** – `navoice.stopVoice()`.
-5. **Handle result** – `onResult` is invoked with the routing result.
-
-Voice routing uses a local-first pipeline:
-local matcher → semantic resolver → cloud interpret fallback.
-
----
-
-## Text Routing
-
-```kotlin
-// Suspend (requires coroutine scope)
-lifecycleScope.launch {
-    val result = navoice.route("show my subscriber number")
-    when (result) {
-        is NavoiceResult.Execute -> navigateTo(result.screenId, result.params)
-        // ...
-    }
-}
-
-// Async callback
-navoice.routeAndCallback("show my subscriber number")
-// onResult is invoked when done
-```
-
-Text routing currently uses the cloud flow. `route(text)` calls `/api/interpret` and maps the response to `NavoiceResult`.
-
----
-
-## UI Integration
-
-The SDK does not provide UI components. It does not control your app's screens, navigation, or layout. You are responsible for:
-
-- Mic button or floating mic UI
-- Navigation (e.g. `NavController`, `FragmentManager`, `Intent`)
-- Choice sheet or bottom sheet for `ShowChoices`
-- Presentation modals for `Present`
-- Error and permission messages
-
----
-
-## Responsibilities
-
-| App responsibility | SDK responsibility |
-|--------------------|--------------------|
-| Provide spec via `specProvider` | Load and validate spec |
-| Implement navigation | Return `NavoiceResult` |
-| Implement UI (mic, sheets, modals) | Return result kinds and payloads |
-| Handle permissions | Request RECORD_AUDIO |
-| Provide `Context` | Use for STT and asset loading |
-
----
-
-## Architecture
-
-```
-App (Activity/Fragment)
-    │
-    │ specProvider()
-    ▼
-Navoice SDK
-    │
-    │ POST /api/license/validate
-    ▼
-Navoice Backend (License Validation)
-    │
-    │ JWT License Token
-    ▼
-Navoice SDK (Active)
-    │
-    │ Voice: Local STT → routeText → Local/Semantic/Cloud → mapResponse
-    │ Text:  route(text) → POST /api/interpret → mapResponse
-    ▼
-NavoiceResult → onResult (App)
-```
-
----
-
-## Licensing & Security
-
-- License validation: `POST /api/license/validate` with `publishable_key`, `platform`: `"android"`, `identifier`.
-- Token is cached locally and refreshed when expired.
-- License must be valid before `/api/interpret` or `/api/stt` calls.
-
----
-
-## Production Configuration
-
-```kotlin
-val config = NavoiceConfig.Builder(context)
-    .baseUrl("https://api.navoice.io")  // optional; defaults internally
-    .publishableKey(BuildConfig.NAVOICE_PUBLISHABLE_KEY)
-    .identifier(context.packageName)
-    .locale("en-US")
-    .sttConfig(NavoiceSTTConfig.hybrid())  // cloud fallback when local fails
-    .debug(BuildConfig.DEBUG)
-    .build(applicationId = context.packageName)
-```
-
-Store the publishable key in `BuildConfig` or a secure config; do not hardcode in source.
-
----
-
-## Error Handling
-
-- **Empty spec** – SDK returns `NavoiceResult.Unsupported("Missing spec. Please provide specProvider (e.g., load spec.json from assets).")`.
-- **License failure** – SDK returns `NavoiceResult.Unsupported("Your license is not active. Contact your administrator or purchase a subscription.")`.
-- **Empty/whitespace text** – SDK returns `NavoiceResult.Unsupported("Please type or say something 🙂")`.
-- **Network/parse errors** – `routeAndCallback` invokes `onResult` with `NavoiceResult.Unsupported(errorMessage)`.
-
----
-
-## Integration Checklist
-
-- [ ] Add `navoice-sdk-release.aar` to `app/libs`
-- [ ] Add required SDK runtime dependencies to `app/build.gradle.kts`
-- [ ] Add `spec.json` to `app/src/main/assets/`
-- [ ] Configure `NavoiceConfig` with publishable key
-- [ ] Set `specProvider` to load spec from assets
-- [ ] Set `onResult` to handle Execute, Present, ShowChoices, Unsupported
-- [ ] Implement navigation (screenId → screen)
-- [ ] Implement presentation UI for `Present`
-- [ ] Implement choice sheet for `ShowChoices`
-- [ ] Add mic button and call `startVoice()` / `stopVoice()`
-- [ ] Request `RECORD_AUDIO` and forward to `onRequestPermissionsResult`
-- [ ] (Optional) Add text input and call `route(text)` or `routeAndCallback(text)`
-
----
-
-## Binary Distribution
-
-- Delivered as `navoice-sdk-release.aar`
-- Source code is not included
-- The host app must add the runtime dependencies listed in the Installation section.
+- Delivered as **`navoice-sdk-release.aar`**
+- Host apps must add the runtime dependencies listed in section 3
 
 ---
 
 ## Support
-support@navoice.io
-For issues, feature requests, or documentation: contact your Navoice support channel or refer to the Navoice Portal.
+
+support@navoice.io  
+
+For issues, feature requests, or documentation, use your Navoice support channel or the Navoice Portal.
