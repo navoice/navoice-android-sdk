@@ -18,6 +18,7 @@ import com.navoice.mycity.sdk.NavoiceChoice
 import com.navoice.mycity.sdk.NavoiceManager
 import com.navoice.mycity.sdk.NavoiceResult
 import androidx.appcompat.app.AlertDialog
+import android.widget.Toast
 
 class RootTabsActivity : AppCompatActivity() {
 
@@ -33,13 +34,6 @@ class RootTabsActivity : AppCompatActivity() {
         navoiceManager = NavoiceManager(this)
         navoiceManager.onResult = ::handleNavoiceResult
         viewModel.navoiceManager = navoiceManager
-        if (!navoiceManager.hasPublishableKey) {
-            AlertDialog.Builder(this)
-                .setTitle("Missing Publishable Key")
-                .setMessage("You should add your publishable key to use voice navigation.")
-                .setPositiveButton("OK", null)
-                .show()
-        }
 
         val navHostFragment =
             supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
@@ -72,35 +66,27 @@ class RootTabsActivity : AppCompatActivity() {
 
     private fun setupMicButton() {
         val micClickListener: () -> Unit = {
-            if (!navoiceManager.hasPublishableKey) {
-                Snackbar.make(
-                    binding.root,
-                    "You should add your publishable key",
-                    Snackbar.LENGTH_LONG
-                ).show()
-            } else {
-                when (viewModel.micState.value) {
-                    MicState.SPEAK -> {
-                        if (!hasRecordAudioPermission()) {
-                            navoiceManager.requestVoicePermission(this) { granted ->
-                                if (granted) viewModel.onMicTapped()
-                            }
-                        } else {
-                            viewModel.onMicTapped()
+            when (viewModel.micState.value) {
+                MicState.SPEAK -> {
+                    if (!hasRecordAudioPermission()) {
+                        navoiceManager.requestVoicePermission(this) { granted ->
+                            if (granted) viewModel.onMicTapped()
                         }
-                    }
-
-                    MicState.LISTENING -> {
+                    } else {
                         viewModel.onMicTapped()
                     }
+                }
 
-                    MicState.THINKING -> {
-                        // no-op
-                    }
+                MicState.LISTENING -> {
+                    viewModel.onMicTapped()
+                }
 
-                    null -> {
-                        // no-op
-                    }
+                MicState.THINKING -> {
+                    // no-op
+                }
+
+                null -> {
+                    // no-op
                 }
             }
         }
@@ -111,29 +97,21 @@ class RootTabsActivity : AppCompatActivity() {
 
     private fun setupTextButton() {
         val textClickListener: () -> Unit = {
-            if (!navoiceManager.hasPublishableKey) {
-                Snackbar.make(
-                    binding.root,
-                    "You should add your publishable key",
-                    Snackbar.LENGTH_LONG
-                ).show()
-            } else {
-                val input = EditText(this).apply {
-                    hint = "Type your request..."
-                }
-
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Text command")
-                    .setView(input)
-                    .setPositiveButton("Send") { _, _ ->
-                        val value = input.text?.toString()?.trim().orEmpty()
-                        if (value.isNotEmpty()) {
-                            navoiceManager.routeText(value)
-                        }
-                    }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
+            val input = EditText(this).apply {
+                hint = "Type your request..."
             }
+
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Text command")
+                .setView(input)
+                .setPositiveButton("Send") { _, _ ->
+                    val value = input.text?.toString()?.trim().orEmpty()
+                    if (value.isNotEmpty()) {
+                        navoiceManager.routeText(value)
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
         }
 
         binding.pencilButton.setOnClickListener { textClickListener() }
@@ -196,6 +174,12 @@ class RootTabsActivity : AppCompatActivity() {
             when (result) {
                 is NavoiceResult.Execute -> {
                     viewModel.showBadge(R.color.badge_success, 1500L)
+                    if (result.screenId == "catalogItemDetails") {
+                        showCatalogItemToast(
+                            result.params.mapValues { it.value?.toString() ?: "" }
+                        )
+                        return@runOnUiThread
+                    }
                     val normalized = result.screenId.substringBefore(".") // "recycle.home" -> "recycle"
                     val tabIndex = RouteMapping.screenIdToTabIndex(normalized)
                     if (tabIndex != null) {
@@ -222,8 +206,7 @@ class RootTabsActivity : AppCompatActivity() {
 
                 is NavoiceResult.Unsupported -> {
                     viewModel.showBadge(R.color.badge_error, 5000L)
-                    Snackbar.make(binding.root, R.string.result_unsupported, Snackbar.LENGTH_LONG)
-                        .show()
+                    Toast.makeText(this, "לא מצאתי", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -243,9 +226,20 @@ class RootTabsActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showCatalogItemToast(params: Map<String, String>) {
+        val title =
+            params["title"]
+                ?: params["name"]
+                ?: params["movieTitle"]
+                ?: params["label"]
+                ?: "Item found"
+
+        Toast.makeText(this, title, Toast.LENGTH_LONG).show()
+    }
+
     private fun resolvePresentationValue(presentationId: String, params: Map<String, String>): String? {
         // If you later pass a value via params (from the server or the app), wire it here.
-        // Currently hardcoded for demo purposes:
+
         return when (presentationId) {
             "id_number" -> "123456789"
             "subscriber_number" -> "SUB-45821"
@@ -254,6 +248,18 @@ class RootTabsActivity : AppCompatActivity() {
         }
     }
 
+    private fun showCatalogItemDialog(params: Map<String, String>) {
+        val itemId = params["itemId"]
+            ?: params["movieId"]
+            ?: params["id"]
+            ?: "Unknown"
+
+        AlertDialog.Builder(this)
+            .setTitle("Item Found")
+            .setMessage("Catalog item ID: $itemId")
+            .setPositiveButton("OK", null)
+            .show()
+    }
 
     private fun navigateToTab(tabIndex: Int) {
         val navHostFragment =
@@ -283,6 +289,16 @@ class RootTabsActivity : AppCompatActivity() {
             .setTitle(R.string.choices_title)
             .setItems(items) { _, which ->
                 val choice = choices.getOrNull(which) ?: return@setItems
+
+                // 🔥 NEW — catalog support
+                if (choice.screenId == "catalogItemDetails") {
+                    showCatalogItemDialog(
+                        choice.params.mapValues { it.value?.toString() ?: "" }
+                    )
+                    return@setItems
+                }
+
+                // fallback רגיל
                 choice.screenId?.let { screenId ->
                     RouteMapping.screenIdToTabIndex(screenId)?.let { index ->
                         navigateToTab(index)

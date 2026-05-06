@@ -144,6 +144,52 @@ val config = NavoiceConfig.Builder(this)
 
 `NavoiceConfig.Builder(this)` passes `Context` so the SDK can run on-device speech recognition.
 
+### Locale configuration & multilingual semantic search
+
+Voice-based semantic catalog search depends heavily on the locale configured in `NavoiceConfig`.
+
+The locale affects:
+- Local Speech-to-Text (STT)
+- Cloud STT transcription quality
+- Semantic catalog matching accuracy
+
+If the configured locale does not match the spoken language or the catalog language, STT may produce inaccurate transcripts, resulting in:
+- Low semantic matching scores
+- Incorrect catalog matches
+- `Unsupported` routing results
+
+Example:
+
+```kotlin
+.locale("he-IL")
+```
+
+Use a locale that matches the primary language of your catalog and users.
+
+Examples:
+
+| Catalog Language | Recommended Locale |
+|---|---|
+| English | `en-US` |
+| Hebrew | `he-IL` |
+| Spanish | `es-ES` |
+| French | `fr-FR` |
+
+Example:
+
+```kotlin
+val config = NavoiceConfig.Builder(this)
+    .publishableKey(AppNavoiceConfig.PUBLISHABLE_KEY)
+    .identifier(packageName)
+    .locale("he-IL")
+    .sttConfig(NavoiceSTTConfig.hybrid())
+    .build(applicationId = packageName)
+```
+
+Important:
+- Emulator/simulator speech recognition quality may differ significantly from physical devices.
+- Always validate multilingual voice flows on real Android devices.
+
 ---
 
 ## 6. Load spec (assets)
@@ -270,11 +316,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val config = NavoiceConfig.Builder(this)
-            .publishableKey(AppNavoiceConfig.PUBLISHABLE_KEY)
-            .identifier(packageName)
-            .locale("en-US")
-            .sttConfig(NavoiceSTTConfig.hybrid())
-            .build(applicationId = packageName)
+    .publishableKey(AppNavoiceConfig.PUBLISHABLE_KEY)
+    .identifier(packageName)
+
+    // IMPORTANT:
+    // Use a locale matching your catalog language.
+    // Example: Hebrew catalog -> "he-IL"
+    .locale("he-IL")
+
+    .sttConfig(NavoiceSTTConfig.hybrid())
+    .build(applicationId = packageName)
 
         navoice = Navoice(config)
 

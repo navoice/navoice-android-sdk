@@ -1,11 +1,12 @@
 package com.navoice.mycity.sdk
 
 sealed class NavoiceResult {
-    data class Execute(val screenId: String) : NavoiceResult()
-
-    /**
-     * Present a UI sheet/dialog instead of navigating.
-     */
+    data class Execute(
+        val screenId: String,
+        val params: Map<String, Any?> = emptyMap(),
+        val say: String?,
+        val confidence: Double?
+    ) : NavoiceResult()
     data class Present(
         val presentationId: String,
         val params: Map<String, Any?> = emptyMap(),
@@ -18,5 +19,6 @@ sealed class NavoiceResult {
 
 data class NavoiceChoice(
     val title: String,
-    val screenId: String? = null
+    val screenId: String?,
+    val params: Map<String, Any?> = emptyMap()
 )

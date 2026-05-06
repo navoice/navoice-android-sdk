@@ -56,7 +56,7 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
-    implementation(files("libs/navoice-sdk-release.aar"))
+    implementation(files("libs/navoice-sdk.aar"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
