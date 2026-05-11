@@ -476,7 +476,121 @@ Register your app’s package name as an allowed identifier in the Navoice porta
 
 ---
 
-## 11. Debugging
+## 11. Semantic Catalog Display Fields (`params.display`)
+
+### 11.1 Semantic Catalog Result Structure
+
+Catalog search results may include a `params.display` object alongside `params.itemId`. This object carries human-readable fields extracted from the matched catalog item, so your app can present meaningful information without additional data fetches.
+
+Example `NavoiceResult.Execute` payload for a catalog match:
+
+```json
+{
+  "kind": "execute",
+  "screenId": "catalogItemDetails",
+  "params": {
+    "itemId": "TITL0000000000000027",
+    "display": {
+      "title": "The Shawshank Redemption",
+      "actors": [
+        "Tim Robbins",
+        "Morgan Freeman"
+      ],
+      "image": "https://...",
+      "description": "Two imprisoned men bond over a number of years..."
+    }
+  }
+}
+```
+
+In Kotlin, `params` is `Map<String, Any?>`, so `params["display"]` will be a `Map<*, *>` when display fields are present.
+
+### 11.2 Generic Display Fields
+
+Display fields are defined in your Semantic Catalog mapping on the Navoice portal using `displayFields`. Each key in `displayFields` names a field to expose in `params.display`, and its value is a dot-path (with optional array notation) into the catalog item's raw JSON.
+
+Example `displayFields` configuration:
+
+```json
+"displayFields": {
+  "title": "title",
+  "actors": "credits.actors",
+  "image": "media[].url",
+  "description": "synopsis"
+}
+```
+
+At query time, the SDK server extracts these values from `semantic_items.raw` and populates `params.display` dynamically. No database migration, catalog re-save, or catalog re-sync is required — existing raw data is used as-is.
+
+This mechanism is fully generic and works for any catalog domain:
+
+- Movies and TV series
+- Products and e-commerce catalogs
+- Restaurants
+- Documents
+- Real estate listings
+- Medical providers (e.g. dentists, doctors)
+- Any custom JSON catalog
+
+### 11.3 Client Rendering Recommendations
+
+Different catalog domains use different field names for the primary human-readable label. Use the following fallback order when choosing a label to display:
+
+1. `params.display.title`
+2. `params.display.name`
+3. `params.display.label`
+4. `params.itemId`
+
+Domain examples:
+- Movies → `title`
+- Products → `name`
+- Generic items → `label`
+- Final fallback → `itemId`
+
+**JavaScript / TypeScript:**
+
+```javascript
+const display = result.params?.display;
+const label =
+  display?.title ||
+  display?.name ||
+  display?.label ||
+  result.params?.itemId;
+```
+
+**Kotlin:**
+
+```kotlin
+val display = result.params["display"] as? Map<*, *>
+val label =
+    (display?.get("title") as? String)
+        ?: (display?.get("name") as? String)
+        ?: (display?.get("label") as? String)
+        ?: (result.params["itemId"] as? String)
+        ?: ""
+```
+
+**Swift:**
+
+```swift
+let display = result.params["display"] as? [String: Any]
+let label =
+    (display?["title"] as? String) ??
+    (display?["name"] as? String) ??
+    (display?["label"] as? String) ??
+    (result.params["itemId"] as? String) ??
+    ""
+```
+
+### 11.4 Backward Compatibility
+
+- `params.itemId` is unchanged. All existing integrations continue to work without modification.
+- `params.display` is optional and additive. If `displayFields` is not configured in your catalog mapping, `params.display` will not be present.
+- Applications that do not need richer presentation may ignore `params.display` entirely.
+
+---
+
+## 12. Debugging
 
 ```kotlin
 Log.d("NAVOICE", "your message")
@@ -488,7 +602,7 @@ Enable SDK verbose logging with `.debug(true)` on `NavoiceConfig.Builder` (see s
 
 ---
 
-## 12. Integration checklist
+## 13. Integration checklist
 
 - [ ] Copy **`navoice-sdk-release.aar`** to **`app/libs/`**
 - [ ] Add **`implementation(files("libs/navoice-sdk-release.aar"))`** and required Maven dependencies
