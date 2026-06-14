@@ -208,6 +208,10 @@ class RootTabsActivity : AppCompatActivity() {
                     viewModel.showBadge(R.color.badge_error, 5000L)
                     Toast.makeText(this, "לא מצאתי", Toast.LENGTH_LONG).show()
                 }
+
+                is NavoiceResult.PlanRestricted -> {
+                    viewModel.showBadge(R.color.badge_error, 5000L)
+                }
             }
         }
     }

@@ -15,6 +15,7 @@ sealed class NavoiceResult {
 
     data class ShowChoices(val choices: List<NavoiceChoice>) : NavoiceResult()
     data class Unsupported(val message: String) : NavoiceResult()
+    data class PlanRestricted(val reason: String, val requiredPlan: String) : NavoiceResult()
 }
 
 data class NavoiceChoice(

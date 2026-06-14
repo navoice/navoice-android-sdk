@@ -66,6 +66,8 @@ class NavoiceManager(private val context: Context) {
                         Log.d(TAG, "interpret response mode=unsupported")
                     is io.navoice.sdk.model.NavoiceResult.Present ->
                         Log.d(TAG, "interpret response mode=present presentationId=${sdkResult.presentationId}")
+                    is io.navoice.sdk.model.NavoiceResult.PlanRestricted ->
+                        Log.d(TAG, "interpret response mode=plan_restricted reason=${sdkResult.reason} requiredPlan=${sdkResult.requiredPlan}")
                 }
             }
 
@@ -299,6 +301,9 @@ class NavoiceManager(private val context: Context) {
 
             is io.navoice.sdk.model.NavoiceResult.Unsupported ->
                 NavoiceResult.Unsupported(sdk.say)
+
+            is io.navoice.sdk.model.NavoiceResult.PlanRestricted ->
+                NavoiceResult.PlanRestricted(reason = sdk.reason, requiredPlan = sdk.requiredPlan)
         }
     }
 
